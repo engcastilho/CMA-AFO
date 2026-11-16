@@ -135,8 +135,6 @@ button.row { width: 100%; text-align: left; }
 }
 .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
 
-.unread { width: 10px; height: 10px; border-radius: 50%; background: var(--blue); flex: none; margin-top: 7px; }
-.unread.off { background: transparent; }
 
 /* data em bloco (sessões) */
 .datebox { width: 46px; flex: none; text-align: center; border-radius: 10px; padding: 5px 0 6px; background: var(--card-2); }
@@ -272,7 +270,14 @@ button.row { width: 100%; text-align: left; }
 .row select {
   appearance: none; -webkit-appearance: none; border: none; outline: none; background: transparent;
   color: var(--label-2); font-size: 17px; text-align: right; text-align-last: right; max-width: 62%;
+  color-scheme: dark;
 }
+/* Lista de opções aberta (no computador): fundo escuro e letras brancas */
+select option, select optgroup {
+  background-color: #1C1C1E; color: #FFFFFF; text-align: left;
+}
+select optgroup { color: rgba(235, 235, 245, .62); font-weight: 600; }
+select option:checked { background-color: #1DAF62; color: #FFFFFF; }
 
 /* ---------- Câmara: comissões, votações, presença ---------- */
 .sigla-ic {
@@ -375,7 +380,6 @@ button.row { width: 100%; text-align: left; }
 .tabbar a.active { color: var(--tint); }
 .tabbar a.active svg { fill: currentColor; }
 .tabbar a.active svg .line { stroke: var(--bar-bg); stroke-width: 1.9; }
-.dot { position: absolute; top: 5px; left: calc(50% + 7px); width: 10px; height: 10px; border-radius: 50%; background: var(--red); border: 2px solid var(--bar-bg); }
 
 /* ---------- aviso rápido ---------- */
 .toast {

@@ -292,51 +292,12 @@ async function materiasNaUnidade(uid, limit = 40) {
 const statusPill = (st) => (st ? `<div class="mat-res"><span class="pill" style="--c:var(--yellow)">${esc(cut(nice(st), 56))}</span></div>` : '');
 
 /* =========================================================
-   Favoritos ("Salvos")
+   Tramitação
    ========================================================= */
-
-const Favs = {
-  all() { return LS.get('favs') || {}; },
-  has(id) { return Boolean(this.all()[id]); },
-  save(obj) { LS.set('favs', obj); updateDot(); },
-  toggle(id, info) {
-    const f = this.all();
-    if (f[id]) delete f[id]; else f[id] = { ...info, added: Date.now() };
-    this.save(f);
-    return Boolean(f[id]);
-  },
-  update(id, patch) {
-    const f = this.all();
-    if (!f[id]) return;
-    f[id] = { ...f[id], ...patch };
-    this.save(f);
-  },
-  hasNews(id) {
-    const x = this.all()[id];
-    return Boolean(x && x.last && x.seen !== x.last);
-  },
-  anyNews() { return Object.keys(this.all()).some((id) => this.hasNews(id)); },
-};
-function updateDot() { $('dot').hidden = !Favs.anyNews(); }
 
 function sortTram(list) {
   return [...list].sort((a, b) => (b.data_tramitacao || '').localeCompare(a.data_tramitacao || '') || (b.id - a.id));
 }
-async function refreshFavs() {
-  const f = Favs.all();
-  const ids = Object.keys(f);
-  if (!ids.length) return;
-  const status = await lookups.status().catch(() => ({}));
-  await Promise.allSettled(ids.map(async (id) => {
-    const j = await api('materia/tramitacao/', { materia: id, page_size: 50 });
-    const t = sortTram(j.results || [])[0];
-    if (!t) return;
-    const patch = { last: t.id, lastStatus: status[t.status] || '', lastDate: t.data_tramitacao };
-    if (f[id].seen === undefined || f[id].seen === null) patch.seen = t.id;
-    Favs.update(id, patch);
-  }));
-}
-
 /* =========================================================
    Estrutura da interface: cabeçalho, navegação, gestos
    ========================================================= */
@@ -345,7 +306,7 @@ let navToken = 0;
 let currentTab = 'hoje';
 const stack = [];
 let titleBottom = 0;
-const TAB_ROOT = { hoje: '#/hoje', sessoes: '#/sessoes', materias: '#/materias', camara: '#/camara', salvos: '#/salvos' };
+const TAB_ROOT = { hoje: '#/hoje', sessoes: '#/sessoes', materias: '#/materias', camara: '#/camara' };
 
 function setHeader(title, { back = false } = {}) {
   $navTitle.textContent = title;
@@ -504,14 +465,11 @@ function closeSheet() {
 
 function matRow(mt, opts = {}) {
   const info = tagInfo(mt);
-  const novo = Favs.hasNews(mt.id);
   return `<a class="row mat" href="#/materia/${mt.id}">
-    ${opts.unread !== undefined ? `<span class="unread ${opts.unread ? '' : 'off'}"></span>` : ''}
     <div class="grow">
-      <div class="mat-top">${tagHTML(info)}${Favs.has(mt.id) ? `<span style="color:var(--orange);width:15px">${I.starFill}</span>` : ''}
-        <span class="when">${esc(opts.when || relDate(mt.data_apresentacao))}</span></div>
+      <div class="mat-top">${tagHTML(info)}<span class="when">${esc(opts.when || relDate(mt.data_apresentacao))}</span></div>
       <div class="mat-text clamp3">${esc(sentence(mt.ementa) || prettyMateria(mt.__str__))}</div>
-      ${opts.extra || ''}${novo && opts.unread === undefined ? '<div class="mat-res"><span class="pill" style="--c:var(--blue)">Novidade</span></div>' : ''}
+      ${opts.extra || ''}
     </div>${I.chev}</a>`;
 }
 function resultadoPill(r) {
@@ -585,7 +543,6 @@ async function viewHoje(m, token) {
       <div class="acts">${acts.join('')}</div>${FLAGBAR}</div>`;
   }
 
-  const favIds = Object.keys(Favs.all());
   render(`${largeHTML('Hoje', fmtLongDate(hoje, false))}
     ${installHTML()}
     ${heroHTML}
@@ -596,27 +553,11 @@ async function viewHoje(m, token) {
       ${tile(cPl, 'Projetos de lei', '--tint', I.scroll, `#/materias?tipo=1&ano=${ano}`)}
       ${tile(cLei, 'Leis sancionadas', '--cyan', I.seal, `#/materias?tipo=30&ano=${ano}`)}
     </div>
-    <div id="favBlock">${favIds.length ? favBlockHTML() : ''}</div>
     <div class="section"><h2>Novas matérias</h2><a href="#/materias">Ver tudo</a></div>
     <div class="group">${(rec.results || []).map((x) => matRow(x)).join('') || '<div class="empty">Nada por aqui.</div>'}</div>
     ${footerHTML}`, token);
 
-  if (favIds.length) {
-    await refreshFavs().catch(() => {});
-    if (token !== navToken) return;
-    const fb = $('favBlock');
-    if (fb) fb.innerHTML = favBlockHTML();
-  }
 }
-function favBlockHTML() {
-  const f = Favs.all();
-  const ids = Object.keys(f).sort((a, b) => (Favs.hasNews(b) - Favs.hasNews(a)) || (f[b].lastDate || '').localeCompare(f[a].lastDate || ''));
-  if (!ids.length) return '';
-  const news = ids.filter((id) => Favs.hasNews(id)).length;
-  return `<div class="section"><h2>Suas matérias</h2><a href="#/salvos">${news ? `${news} novidade${news > 1 ? 's' : ''}` : 'Ver tudo'}</a></div>
-    <div class="group">${ids.slice(0, 3).map((id) => favRow(id, f[id])).join('')}</div>`;
-}
-
 /* =========================================================
    SESSÕES
    ========================================================= */
@@ -910,9 +851,6 @@ async function viewMateria(m, token) {
   const ondeTxt = ult ? unidades[ult.unidade_tramitacao_destino] || '' : '';
   const ementa = sentence(mt.ementa);
 
-  const favInfo = () => ({ tag: info, ementa: cut(ementa, 200), seen: ult ? ult.id : null, last: ult ? ult.id : null, lastStatus: statusTxt, lastDate: ult ? ult.data_tramitacao : '' });
-  if (Favs.has(mt.id)) Favs.update(mt.id, favInfo());
-  const fav = Favs.has(mt.id);
 
   const autoresList = (aut.results || []).map((a) => autores.find((x) => x.id === a.autor)).filter(Boolean);
   const autorRows = autoresList.length ? autoresList.map((au, i) => au.tipo === 2
@@ -924,7 +862,6 @@ async function viewMateria(m, token) {
 
   const acts = [];
   if (mt.texto_original) acts.push(`<a class="action" href="${esc(https(mt.texto_original))}" target="_blank" rel="noopener">${I.doc}Texto</a>`);
-  acts.push(`<button class="action ${fav ? 'on' : ''}" id="favBtn">${fav ? I.starFill : I.star}<span>${fav ? 'Seguindo' : 'Seguir'}</span></button>`);
   acts.push(`<button class="action" id="shareM">${I.share}Enviar</button>`);
   acts.push(`<a class="action" href="${SAPL}/materia/${mt.id}" target="_blank" rel="noopener">${I.compass}SAPL</a>`);
 
@@ -1000,13 +937,6 @@ async function viewMateria(m, token) {
   const tlMore = $('tlMore');
   if (tlMore) tlMore.onclick = () => { $('tl').innerHTML = trams.map(tramItem).join(''); tlMore.remove(); };
 
-  $('favBtn').onclick = (ev) => {
-    const on = Favs.toggle(mt.id, favInfo());
-    const b = ev.currentTarget;
-    b.classList.toggle('on', on);
-    b.innerHTML = `${on ? I.starFill : I.star}<span>${on ? 'Seguindo' : 'Seguir'}</span>`;
-    toast(on ? 'Você está seguindo esta matéria' : 'Deixou de seguir');
-  };
   $('shareM').onclick = () => shareLink({ title: `${info.label} · Câmara de Alta Floresta D'Oeste`, text: cut(ementa, 180), hash: `#/materia/${mt.id}` });
 }
 
@@ -1200,43 +1130,6 @@ async function viewVereador(m, token) {
 }
 
 /* =========================================================
-   SALVOS
-   ========================================================= */
-
-function favRow(id, x) {
-  const novo = Favs.hasNews(id);
-  const tag = x.tag ? tagHTML(x.tag) : `<span class="tag">${esc(cut(x.titulo || 'Matéria', 30))}</span>`;
-  return `<a class="row mat" href="#/materia/${id}">
-    <span class="unread ${novo ? '' : 'off'}"></span>
-    <div class="grow">
-      <div class="mat-top">${tag}<span class="when">${esc(relDate(x.lastDate))}</span></div>
-      ${x.lastStatus ? `<div class="title" style="font-size:15.5px;font-weight:600;margin-bottom:2px">${esc(cut(nice(x.lastStatus), 70))}</div>` : ''}
-      ${x.ementa ? `<div class="mat-text clamp2" style="color:var(--label-2)">${esc(x.ementa)}</div>` : ''}
-    </div>${I.chev}</a>`;
-}
-function salvosListHTML() {
-  const f = Favs.all();
-  const ids = Object.keys(f).sort((a, b) => (Favs.hasNews(b) - Favs.hasNews(a)) || (f[b].lastDate || '').localeCompare(f[a].lastDate || ''));
-  if (!ids.length) {
-    return `<div class="empty"><div class="big">${I.star}</div><b>Nenhuma matéria seguida</b>
-      Abra uma matéria e toque em <b style="display:inline;font-size:16px;color:var(--tint)">Seguir</b>.
-      Quando ela andar, aparece aqui com um ponto azul.</div>`;
-  }
-  const news = ids.filter((id) => Favs.hasNews(id)).length;
-  return `<div class="count">${news ? `${news} com novidade` : `${ids.length} seguida${ids.length > 1 ? 's' : ''}`}</div>
-    <div class="group">${ids.map((id) => favRow(id, f[id])).join('')}</div>
-    <div class="foot-note" style="margin-top:-12px">Abra a matéria para ver o que mudou. O ponto azul some depois disso.</div>`;
-}
-async function viewSalvos(m, token) {
-  setHeader('Salvos');
-  render(`${largeHTML('Salvos', 'Matérias que você segue')}<div id="favs">${salvosListHTML()}</div>${footerHTML}`, token);
-  await refreshFavs().catch(() => {});
-  if (token !== navToken) return;
-  const el = $('favs');
-  if (el) el.innerHTML = salvosListHTML();
-}
-
-/* =========================================================
    Roteador
    ========================================================= */
 
@@ -1251,7 +1144,7 @@ const routes = [
   [/^#\/vereador\/(\d+)$/, viewVereador, 'camara'],
   [/^#\/comissao\/(\d+)$/, viewComissao, 'camara'],
   [/^#\/unidade\/(\d+)$/, viewUnidade, 'camara'],
-  [/^#\/salvos$/, viewSalvos, 'salvos'],
+  [/^#\/salvos$/, () => location.replace('#/hoje'), 'hoje'],
 ];
 
 async function router(keepScroll) {
@@ -1292,8 +1185,7 @@ if ('serviceWorker' in navigator) {
 }
 
 netStatus();
-updateDot();
+try { localStorage.removeItem('favs'); } catch {}
 stack.push(location.hash || '#/hoje');
 lookups.tipos().catch(() => {});
 router();
-refreshFavs().then(updateDot).catch(() => {});
