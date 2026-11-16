@@ -1102,7 +1102,6 @@ async function viewComissao(m, token) {
   const per = coms.periodo ? `Período ${String(coms.periodo.inicio).slice(0, 4)}–${String(coms.periodo.fim).slice(0, 4)}` : '';
 
   render(`${largeHTML(comName(c.nome), 'Comissão permanente · ' + c.sigla, esc(per))}
-    ${c.finalidade ? `<p class="lede">${esc(sentence(c.finalidade))}</p>` : ''}
     <div class="sh">Composição</div>
     <div class="group inset-64">${membros || '<div class="row"><div class="grow sub">Composição não cadastrada.</div></div>'}</div>
     <div class="sh">Na comissão agora${na.total ? ' · ' + na.total : ''}</div>
@@ -1111,7 +1110,13 @@ async function viewComissao(m, token) {
     <div class="sh">Reuniões${rj.pagination ? ' · ' + rj.pagination.total_entries : ''}</div>
     <div class="group inset-64" id="reun">${reunioes.map(reuniaoRow).join('') || '<div class="row"><div class="grow sub">Nenhuma reunião registrada.</div></div>'}</div>
     <div id="more"></div>
+    ${c.finalidade ? `<div class="sh">Competências</div><div class="group"><div class="row"><div class="grow">
+      <div class="mat-text clamp3" id="fin" style="color:var(--label-2)">${esc(sentence(c.finalidade))}</div>
+      <button class="link-btn" id="finBtn">Ler tudo</button></div></div></div>` : ''}
     ${footerHTML}`, token);
+
+  const finBtn = $('finBtn');
+  if (finBtn) finBtn.onclick = () => { $('fin').classList.toggle('clamp3'); finBtn.textContent = $('fin').classList.contains('clamp3') ? 'Ler tudo' : 'Mostrar menos'; };
 
   const setMore = () => {
     $('more').innerHTML = next ? '<div class="group"><button class="more-btn" id="moreBtn">Reuniões anteriores</button></div>' : '';
