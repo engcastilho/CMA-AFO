@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Câmara AFO</title>
+  <meta name="description" content="Sessões, matérias e vereadores da Câmara Municipal de Alta Floresta D'Oeste, com dados públicos do SAPL.">
+  <meta name="theme-color" content="#000000">
+
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Câmara AFO">
+
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="back" id="back" aria-label="Voltar" hidden>‹</button>
+    <div class="titles">
+      <div class="kicker" id="kicker">Câmara de Alta Floresta D'Oeste</div>
+      <h1 id="title">Sessões</h1>
+    </div>
+  </header>
+
+  <div class="offline" id="offline" hidden>Sem internet: mostrando os últimos dados salvos.</div>
+
+  <main id="view" aria-live="polite"></main>
+
+  <nav class="tabbar" aria-label="Seções">
+    <a href="#/sessoes" data-tab="sessoes"><span class="ico">🏛️</span><span>Sessões</span></a>
+    <a href="#/materias" data-tab="materias"><span class="ico">📄</span><span>Matérias</span></a>
+    <a href="#/vereadores" data-tab="vereadores"><span class="ico">👥</span><span>Vereadores</span></a>
+    <a href="#/salvos" data-tab="salvos"><span class="ico">⭐</span><span>Salvos</span><i class="dot" id="dot" hidden></i></a>
+  </nav>
+
+  <script src="./app.js"></script>
+</body>
+</html>
