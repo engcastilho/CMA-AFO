@@ -4,10 +4,11 @@ App de bolso (PWA) da Câmara Municipal de Alta Floresta D'Oeste (RO).
 
 Ele lê os dados públicos do [SAPL da Câmara](https://sapl.altaflorestadoeste.ro.leg.br) e mostra:
 
-- **Sessões:** as últimas sessões, com pauta, ata e vídeo, e as matérias lidas e votadas em cada uma.
-- **Matérias:** busca por assunto ou número, com filtros por tipo, ano e autor. Cada matéria mostra autoria, situação atual, texto original em PDF e toda a tramitação.
-- **Vereadores:** os vereadores da legislatura atual, com números de produção e as matérias mais recentes de cada um.
-- **Salvos:** matérias que você acompanha. Quando uma delas anda, aparece o selo "Novidade".
+- **Hoje:** a próxima sessão em destaque, os números do ano, as matérias que você segue e as mais novas.
+- **Sessões:** as sessões com pauta, ata e vídeo, as matérias lidas e votadas em cada uma e a presença dos vereadores.
+- **Matérias:** busca por assunto ou número, com filtros por tipo, ano e autor. Cada matéria mostra a etapa em que está, autoria, relatoria, a tramitação completa e as votações, com o voto de cada vereador.
+- **Câmara:** Mesa Diretora, comissões permanentes (composição, matérias que estão em cada comissão agora e reuniões com pauta e ata), vereadores e leis sancionadas.
+- **Salvos:** matérias que você segue. Quando uma delas anda, aparece um ponto azul.
 
 ## Como instalar no iPhone
 

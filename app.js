@@ -193,19 +193,26 @@ const lookups = {
   autores: () => cached('autores', 12, async () =>
     (await allPages('base/autor/')).map((a) => ({ id: a.id, nome: a.nome, tipo: a.tipo, obj: a.object_id }))),
   vereadores: () => cached('vereadores', 12, loadVereadores),
+  parls: () => cached('parls', 12, async () =>
+    Object.fromEntries((await allPages('parlamentares/parlamentar/')).map((p) => [p.id, {
+      nome: p.nome_parlamentar || p.nome_completo || '', completo: p.nome_completo || '', foto: https(p.fotografia),
+    }]))),
+  comissoes: () => cached('comissoes', 6, loadComissoes),
+  mesa: () => cached('mesa', 12, loadMesa),
+  resultados: () => cached('resultados', 24, async () =>
+    Object.fromEntries((await allPages('sessao/tiporesultadovotacao/')).map((t) => [t.id, { nome: t.nome, nat: t.natureza }]))),
 };
 
 async function loadVereadores() {
-  const [legs, parls, autores] = await Promise.all([
+  const [legs, byId, autores] = await Promise.all([
     allPages('parlamentares/legislatura/'),
-    allPages('parlamentares/parlamentar/'),
+    lookups.parls(),
     lookups.autores(),
   ]);
   const hoje = todayISO();
   let atual = legs.find((l) => l.data_inicio <= hoje && hoje <= l.data_fim);
   if (!atual) atual = legs.reduce((a, b) => (Number(b.numero) > Number(a.numero) ? b : a), legs[0]);
   const mandatos = await allPages('parlamentares/mandato/', { legislatura: atual.id });
-  const byId = Object.fromEntries(parls.map((p) => [p.id, p]));
   const seen = new Set();
   const lista = [];
   for (const m of mandatos) {
@@ -215,9 +222,9 @@ async function loadVereadores() {
     const autor = autores.find((a) => a.tipo === 2 && a.obj === m.parlamentar);
     lista.push({
       pid: m.parlamentar,
-      nome: p.nome_parlamentar || p.nome_completo || String(m.__str__ || '').split(' 1')[0],
-      completo: p.nome_completo || '',
-      foto: https(p.fotografia),
+      nome: p.nome || String(m.__str__ || '').split(' 1')[0],
+      completo: p.completo || '',
+      foto: p.foto || '',
       titular: m.titular !== false,
       autorId: autor ? autor.id : null,
     });
@@ -225,6 +232,64 @@ async function loadVereadores() {
   lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   return { legislatura: atual.numero, inicio: atual.data_inicio, fim: atual.data_fim, lista };
 }
+
+// Comissões ativas, com a composição do período atual.
+async function loadComissoes() {
+  const [coms, pers, comps, parts, cargos, unidades] = await Promise.all([
+    allPages('comissoes/comissao/'), allPages('comissoes/periodo/'), allPages('comissoes/composicao/'),
+    allPages('comissoes/participacao/'), allPages('comissoes/cargocomissao/'), lookups.unidades(),
+  ]);
+  const hoje = todayISO();
+  const per = pers.find((p) => p.data_inicio <= hoje && hoje <= (p.data_fim || '9999-12-31'))
+    || [...pers].sort((a, b) => String(b.data_inicio).localeCompare(String(a.data_inicio)))[0];
+  const cargo = Object.fromEntries(cargos.map((c) => [c.id, c.nome]));
+  const list = coms.filter((c) => c.ativa).map((c) => {
+    const comp = per && comps.find((x) => x.comissao === c.id && x.periodo === per.id);
+    const members = comp ? parts.filter((p) => p.composicao === comp.id && !p.data_desligamento).map((p) => ({
+      pid: p.parlamentar, cargo: cargo[p.cargo] || 'Membro', titular: p.titular !== false, pres: /presidente/i.test(cargo[p.cargo] || ''),
+    })) : [];
+    members.sort((a, b) => (b.pres - a.pres) || (b.titular - a.titular));
+    const uid = Object.keys(unidades).find((k) => String(unidades[k]).toUpperCase().startsWith(String(c.sigla).toUpperCase() + ' -'));
+    return { id: c.id, nome: c.nome, sigla: c.sigla, finalidade: c.finalidade || '', unidadeId: uid ? Number(uid) : null, members };
+  });
+  list.sort((a, b) => comName(a.nome).localeCompare(comName(b.nome), 'pt-BR'));
+  const dc = Object.keys(unidades).find((k) => /diretoria das comiss/i.test(unidades[k]));
+  return { periodo: per ? { inicio: per.data_inicio, fim: per.data_fim } : null, list, dcId: dc ? Number(dc) : null };
+}
+function comName(nome) {
+  return nice(String(nome || '').replace(/^COMISS[ÃA]O\s+(PERMANENTE|TEMPOR[ÁA]RIA)?\s*(DE|DA|DO|DOS|DAS)?\s*/i, '')) || nice(nome);
+}
+
+// Mesa Diretora da sessão legislativa atual.
+async function loadMesa() {
+  const [sls, mesas, cargos, comp] = await Promise.all([
+    allPages('parlamentares/sessaolegislativa/'), allPages('parlamentares/mesadiretora/'),
+    allPages('parlamentares/cargomesa/'), allPages('parlamentares/composicaomesa/'),
+  ]);
+  const hoje = todayISO();
+  const sl = sls.find((x) => x.data_inicio <= hoje && hoje <= x.data_fim)
+    || [...sls].sort((a, b) => String(b.data_inicio).localeCompare(String(a.data_inicio)))[0];
+  const mesa = sl && mesas.find((x) => x.sessao_legislativa === sl.id);
+  if (!mesa) return { ano: '', list: [] };
+  const cargo = Object.fromEntries(cargos.map((c) => [c.id, c.descricao]));
+  const ORDER = { 1: 0, 2: 1, 5: 2, 6: 3, 3: 4, 4: 5 };
+  const list = comp.filter((c) => c.mesa_diretora === mesa.id)
+    .map((c) => ({ pid: c.parlamentar, cargo: cargo[c.cargo] || '', ord: ORDER[c.cargo] ?? 9 }))
+    .sort((a, b) => a.ord - b.ord);
+  return { ano: String(sl.data_inicio || '').slice(0, 4), list };
+}
+
+// Matérias que estão paradas numa unidade agora (comissão, diretoria...).
+async function materiasNaUnidade(uid, limit = 40) {
+  const j = await api('materia/materiaemtramitacao/', { unidade_tramitacao_atual: uid, page_size: limit });
+  const items = j.results || [];
+  const mats = await Promise.all(items.map((it) => api(`materia/materialegislativa/${it.materia}/`).catch(() => null)));
+  return {
+    total: total(j),
+    rows: items.map((it, i) => ({ mt: mats[i], status: (String(it.__str__ || '').split('|')[1] || '').trim() })).filter((x) => x.mt),
+  };
+}
+const statusPill = (st) => (st ? `<div class="mat-res"><span class="pill" style="--c:var(--yellow)">${esc(cut(nice(st), 56))}</span></div>` : '');
 
 /* =========================================================
    Favoritos ("Salvos")
@@ -280,7 +345,7 @@ let navToken = 0;
 let currentTab = 'hoje';
 const stack = [];
 let titleBottom = 0;
-const TAB_ROOT = { hoje: '#/hoje', sessoes: '#/sessoes', materias: '#/materias', vereadores: '#/vereadores', salvos: '#/salvos' };
+const TAB_ROOT = { hoje: '#/hoje', sessoes: '#/sessoes', materias: '#/materias', camara: '#/camara', salvos: '#/salvos' };
 
 function setHeader(title, { back = false } = {}) {
   $navTitle.textContent = title;
@@ -597,11 +662,13 @@ async function viewSessao(m, token) {
   const id = m[1];
   setHeader('Sessão', { back: true });
   render(skeletonHTML(null, null, 4), token, false);
-  const [s, exp, ord] = await Promise.all([
+  const [s, exp, ord, , pres, parls] = await Promise.all([
     api(`sessao/sessaoplenaria/${id}/`),
     api('sessao/expedientemateria/', { sessao_plenaria: id, page_size: 100 }).catch(() => ({ results: [] })),
     api('sessao/ordemdia/', { sessao_plenaria: id, page_size: 100 }).catch(() => ({ results: [] })),
     lookups.tipos().catch(() => ({})),
+    api('sessao/sessaoplenariapresenca/', { sessao_plenaria: id, page_size: 50 }).catch(() => ({ results: [] })),
+    lookups.parls().catch(() => ({})),
   ]);
   if (token !== navToken) return;
   const nome = sessaoNome(s);
@@ -620,6 +687,12 @@ async function viewSessao(m, token) {
   if (s.url_video) acts.push(`<a class="action" href="${esc(s.url_video)}" target="_blank" rel="noopener">${I.play}Vídeo</a>`);
   acts.push(`<button class="action" id="shareS">${I.share}Enviar</button>`);
 
+  const presentes = [...new Set((pres.results || []).map((x) => x.parlamentar))]
+    .map((pid) => ({ pid, nome: (parls[pid] || {}).nome || '' })).filter((x) => x.nome)
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const presHTML = presentes.length ? `<div class="sh">Presença · ${presentes.length} vereador${presentes.length > 1 ? 'es' : ''}</div>
+    <div class="group"><div class="names">${presentes.map((x) => `<a class="nchip" href="#/vereador/${x.pid}">${esc(x.nome)}</a>`).join('')}</div></div>` : '';
+
   const byOrder = (a, b) => (a.numero_ordem || 0) - (b.numero_ordem || 0);
   const block = (label, list) => (list.length ? `<div class="sh">${label} · ${list.length}</div><div class="group">${
     [...list].sort(byOrder).map((it) => {
@@ -633,6 +706,7 @@ async function viewSessao(m, token) {
     ${block('Expediente', exp.results || [])}
     ${block('Ordem do Dia', ord.results || [])}
     ${items.length ? '' : `<div class="empty"><b>Sem matérias lançadas</b>As matérias desta sessão ainda não foram registradas no sistema.${s.upload_pauta ? ' Veja a pauta em PDF acima.' : ''}</div>`}
+    ${presHTML}
     <div class="sh">Sobre</div><div class="group"><div class="row"><div class="grow"><div class="sub" style="margin:0">${esc(nice(s.__str__))}</div></div></div></div>
     ${footerHTML}`, token);
 
@@ -818,7 +892,14 @@ async function viewMateria(m, token) {
     lookups.tipos().catch(() => ({})),
   ]);
   if (token !== navToken) return;
-  const docs = await api('materia/documentoacessorio/', { materia: id, page_size: 50 }).catch(() => ({ results: [] }));
+  const [docs, regs, rels, resultados, parls, coms] = await Promise.all([
+    api('materia/documentoacessorio/', { materia: id, page_size: 50 }).catch(() => ({ results: [] })),
+    api('sessao/registrovotacao/', { materia: id, page_size: 50 }).catch(() => ({ results: [] })),
+    api('materia/relatoria/', { materia: id, page_size: 20 }).catch(() => ({ results: [] })),
+    lookups.resultados().catch(() => ({})),
+    lookups.parls().catch(() => ({})),
+    lookups.comissoes().catch(() => null),
+  ]);
   if (token !== navToken) return;
 
   const info = tagInfo(mt);
@@ -851,6 +932,26 @@ async function viewMateria(m, token) {
     `<a class="row" href="${esc(https(d.arquivo))}" target="_blank" rel="noopener"><span style="color:var(--tint);width:22px">${I.doc}</span>
       <div class="grow"><div class="title">${esc(cut(nice(d.nome || 'Documento'), 60))}</div>${d.data ? `<div class="sub">${esc(fmtDate(d.data))}</div>` : ''}</div>${I.chev}</a>`).join('');
 
+  const relatoriaRows = (rels.results || []).filter((r) => !r.data_destituicao_relator).map((r) => {
+    const com = coms && coms.list.find((c) => c.id === r.comissao);
+    const pr = parls[r.parlamentar] || {};
+    return `<a class="row" href="#/vereador/${r.parlamentar}"><div class="grow"><div class="sub" style="margin:0 0 2px">Relatoria${com ? ' · ' + esc(com.sigla) : ''}</div>
+      <div class="title">${esc(pr.nome || '—')}</div></div>${I.chev}</a>`;
+  }).join('');
+
+  const votos = [...(regs.results || [])].sort((a, b) => String(b.data_hora).localeCompare(String(a.data_hora)));
+  const votosHTML = votos.map((vt) => {
+    const r = resultados[vt.tipo_resultado_votacao] || { nome: 'Votação', nat: '' };
+    const c = r.nat === 'A' ? '--green' : r.nat === 'R' ? '--red' : '--gray';
+    const ses = (String(vt.__str__ || '').match(/em (\d+ª)\s+(\S+)/) || []);
+    const nVotos = (vt.numero_votos_sim || 0) + (vt.numero_votos_nao || 0) + (vt.numero_abstencoes || 0);
+    return `<div class="vote"><div class="vote-head"><span class="pill" style="--c:var(${c})">${esc(nice(r.nome))}</span>
+        <span class="when">${esc(fmtDate(vt.data_hora))}</span></div>
+      <div class="sub">${ses[1] ? `${esc(ses[1])} Sessão ${esc(ses[2])} · ` : ''}${vt.numero_votos_sim} sim · ${vt.numero_votos_nao} não · ${vt.numero_abstencoes} abstenç${vt.numero_abstencoes === 1 ? 'ão' : 'ões'}</div>
+      ${vt.observacao && vt.observacao.trim() ? `<div class="txt">${esc(cut(vt.observacao.trim(), 220))}</div>` : ''}
+      ${nVotos ? `<button class="link-btn" data-votacao="${vt.id}">Ver o voto de cada vereador</button><div class="votos" id="votos-${vt.id}" hidden></div>` : ''}</div>`;
+  }).join('');
+
   const SHOW = 6;
   const tramItem = (t) => `<li><div class="what">${esc(nice(status[t.status] || 'Tramitação'))}</div>
     <div class="meta">${esc(relDate(t.data_tramitacao))}${relDate(t.data_tramitacao) !== fmtDate(t.data_tramitacao) ? ' · ' + esc(fmtDate(t.data_tramitacao)) : ''}${unidades[t.unidade_tramitacao_destino] ? ' · ' + esc(shortUnidade(unidades[t.unidade_tramitacao_destino])) : ''}${t.urgente ? ' · <span style="color:var(--red)">urgente</span>' : ''}</div>
@@ -864,14 +965,37 @@ async function viewMateria(m, token) {
       ${autorRows}
       ${infoRow('Apresentada em', esc(fmtDate(mt.data_apresentacao)) || '—')}
       ${ondeTxt ? infoRow('Onde está agora', esc(shortUnidade(ondeTxt))) : ''}
+      ${relatoriaRows}
       ${mt.observacao ? infoRow('Observação', esc(mt.observacao)) : ''}
     </div>
+    ${votosHTML ? `<div class="sh">Votações · ${(regs.results || []).length}</div><div class="group">${votosHTML}</div>` : ''}
     ${docsHTML ? `<div class="sh">Documentos</div><div class="group">${docsHTML}</div>` : ''}
     <div class="sh">Tramitação${trams.length ? ' · ' + trams.length : ''}</div>
     <div class="group">${trams.length ? `<ul class="timeline" id="tl">${trams.slice(0, SHOW).map(tramItem).join('')}</ul>
       ${trams.length > SHOW ? `<button class="more-btn" id="tlMore">Mostrar as ${trams.length} etapas</button>` : ''}`
       : '<div class="empty" style="padding:22px">Nenhuma tramitação registrada.</div>'}</div>
     ${footerHTML}`, token);
+
+  $view.querySelectorAll('[data-votacao]').forEach((b) => {
+    b.onclick = async () => {
+      const vid = b.dataset.votacao;
+      const box = $('votos-' + vid);
+      if (!box.hidden) { box.hidden = true; b.textContent = 'Ver o voto de cada vereador'; return; }
+      b.textContent = 'Carregando…';
+      try {
+        if (!box.dataset.ok) {
+          const j = await api('sessao/votoparlamentar/', { votacao: vid, page_size: 50 });
+          const cor = (v) => (/^sim/i.test(v) ? '--green' : /^n[ãa]o$/i.test(v) ? '--red' : '--gray');
+          box.innerHTML = (j.results || []).map((x) => ({ nome: (parls[x.parlamentar] || {}).nome || '—', voto: x.voto || '', pid: x.parlamentar }))
+            .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+            .map((x) => `<a class="vchip" style="--c:var(${cor(x.voto)})" href="#/vereador/${x.pid}">${esc(x.nome)} <b>${esc(x.voto)}</b></a>`).join('')
+            || '<span class="sub">Votos individuais não registrados.</span>';
+          box.dataset.ok = '1';
+        }
+        box.hidden = false; b.textContent = 'Esconder votos';
+      } catch { b.textContent = 'Erro. Toque para tentar de novo'; }
+    };
+  });
 
   const tlMore = $('tlMore');
   if (tlMore) tlMore.onclick = () => { $('tl').innerHTML = trams.map(tramItem).join(''); tlMore.remove(); };
@@ -896,13 +1020,122 @@ function avatarHTML(v, cls = '') {
     : `<div class="avatar ${cls}"></div>`;
 }
 
-async function viewVereadores(m, token) {
-  setHeader('Vereadores');
-  render(skeletonHTML('Vereadores', KICKER, 8), token, false);
-  const v = await lookups.vereadores();
-  render(`${largeHTML('Vereadores', `${v.legislatura}ª Legislatura · ${String(v.inicio).slice(0, 4)}–${String(v.fim).slice(0, 4)}`)}
-    <div class="group inset-64">${v.lista.map((p) => `<a class="row" href="#/vereador/${p.pid}">${avatarHTML(p)}
-      <div class="grow"><div class="title">${esc(p.nome)}</div><div class="sub">${p.titular ? 'Vereador(a)' : 'Suplente'}</div></div>${I.chev}</a>`).join('')}</div>
+async function viewCamara(m, token) {
+  setHeader('Câmara');
+  render(skeletonHTML('Câmara', KICKER, 8), token, false);
+  const [v, mesa, coms, parls] = await Promise.all([
+    lookups.vereadores(), lookups.mesa().catch(() => ({ list: [] })), lookups.comissoes().catch(() => null), lookups.parls(),
+  ]);
+  const [fila, leis] = await Promise.all([
+    coms && coms.dcId ? api('materia/materiaemtramitacao/', { unidade_tramitacao_atual: coms.dcId, page_size: 1 }).then(total).catch(() => null) : null,
+    api('materia/materialegislativa/', { tipo: 30, page_size: 1 }).then(total).catch(() => null),
+  ]);
+  if (token !== navToken) return;
+  const person = (pid) => parls[pid] || {};
+  const cargoMesa = Object.fromEntries(mesa.list.map((x) => [x.pid, x.cargo]));
+
+  const mesaRows = mesa.list.map((x) => `<a class="row" href="#/vereador/${x.pid}">${avatarHTML(person(x.pid))}
+    <div class="grow"><div class="title">${esc(person(x.pid).nome || '')}</div><div class="sub">${esc(x.cargo)}</div></div>${I.chev}</a>`).join('');
+
+  const comRows = (coms ? coms.list : []).map((c) => {
+    const pres = c.members.find((x) => x.pres);
+    return `<a class="row" href="#/comissao/${c.id}"><div class="sigla-ic">${esc(c.sigla)}</div>
+      <div class="grow"><div class="title">${esc(comName(c.nome))}</div>
+      <div class="sub">${pres ? 'Presidente: ' + esc(person(pres.pid).nome || '') + ' · ' : ''}${c.members.length} membros</div></div>${I.chev}</a>`;
+  }).join('');
+  const filaRow = fila ? `<a class="row" href="#/unidade/${coms.dcId}"><div class="sigla-ic" style="--c:var(--yellow)">${I.list}</div>
+      <div class="grow"><div class="title">Aguardando as comissões</div><div class="sub">${fila} matéria${fila > 1 ? 's' : ''} na Diretoria das Comissões</div></div>${I.chev}</a>` : '';
+
+  const verRows = v.lista.map((p) => `<a class="row" href="#/vereador/${p.pid}">${avatarHTML(p)}
+    <div class="grow"><div class="title">${esc(p.nome)}</div><div class="sub">${esc(cargoMesa[p.pid] && cargoMesa[p.pid] !== 'Vereador' ? cargoMesa[p.pid] + ' da Mesa' : (p.titular ? 'Vereador(a)' : 'Suplente'))}</div></div>${I.chev}</a>`).join('');
+
+  const per = coms && coms.periodo ? ` · ${String(coms.periodo.inicio).slice(0, 4)}–${String(coms.periodo.fim).slice(0, 4)}` : '';
+  render(`${largeHTML('Câmara', `${v.legislatura}ª Legislatura · ${String(v.inicio).slice(0, 4)}–${String(v.fim).slice(0, 4)}`)}
+    ${mesaRows ? `<div class="sh">Mesa Diretora${mesa.ano ? ' · ' + esc(mesa.ano) : ''}</div><div class="group inset-64">${mesaRows}</div>` : ''}
+    ${comRows ? `<div class="sh">Comissões permanentes${per}</div><div class="group inset-64">${comRows}${filaRow}</div>` : ''}
+    <div class="sh">Vereadores · ${v.lista.length}</div><div class="group inset-64">${verRows}</div>
+    <div class="sh">Legislação</div><div class="group inset-64">
+      <a class="row" href="#/materias?tipo=30"><div class="sigla-ic" style="--c:var(--cyan)">${I.seal}</div>
+      <div class="grow"><div class="title">Leis sancionadas</div><div class="sub">${leis === null ? 'Consultar' : leis.toLocaleString('pt-BR') + ' registradas no sistema'}</div></div>${I.chev}</a></div>
+    ${footerHTML}`, token);
+}
+
+function reuniaoRow(r) {
+  const links = [];
+  if (r.upload_pauta) links.push(`<a href="${esc(https(r.upload_pauta))}" target="_blank" rel="noopener">Pauta</a>`);
+  if (r.upload_ata) links.push(`<a href="${esc(https(r.upload_ata))}" target="_blank" rel="noopener">Ata</a>`);
+  if (r.url_video) links.push(`<a href="${esc(r.url_video)}" target="_blank" rel="noopener">Vídeo</a>`);
+  const mes = toDate(r.data).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+  return `<div class="row"><div class="datebox"><b>${esc(String(r.data).slice(8, 10))}</b><span>${esc(mes)}</span></div>
+    <div class="grow"><div class="title">${esc(nice(r.nome || 'Reunião'))}${r.numero ? ' nº ' + esc(r.numero) : ''}</div>
+      <div class="sub">${esc(relDate(r.data))}${r.tema ? ' · ' + esc(nice(r.tema)) : ''}</div>
+      ${links.length ? `<div class="mini-links">${links.join('')}</div>` : ''}</div></div>`;
+}
+
+async function viewComissao(m, token) {
+  const id = Number(m[1]);
+  setHeader('Comissão', { back: true });
+  render(skeletonHTML(null, null, 5), token, false);
+  const [coms, parls] = await Promise.all([lookups.comissoes(), lookups.parls(), lookups.tipos().catch(() => ({}))]);
+  const c = coms.list.find((x) => x.id === id);
+  if (!c) throw new Error('Comissão não encontrada ou inativa');
+  if (token !== navToken) return;
+  setHeader(c.sigla, { back: true });
+
+  let next = 1;
+  const reunioes = [];
+  const loadReun = async () => {
+    const j = await api('comissoes/reuniao/', { comissao: id, o: '-data', page_size: 10, page: next });
+    reunioes.push(...(j.results || []));
+    next = j.pagination && j.pagination.next_page;
+    return j;
+  };
+  const [na, rj] = await Promise.all([
+    c.unidadeId ? materiasNaUnidade(c.unidadeId).catch(() => ({ total: 0, rows: [] })) : { total: 0, rows: [] },
+    loadReun(),
+  ]);
+  if (token !== navToken) return;
+
+  const person = (pid) => parls[pid] || {};
+  const membros = c.members.map((x) => `<a class="row" href="#/vereador/${x.pid}">${avatarHTML(person(x.pid))}
+    <div class="grow"><div class="title">${esc(person(x.pid).nome || '')}</div><div class="sub">${esc(x.cargo)}${x.titular ? '' : ' · Suplente'}</div></div>${I.chev}</a>`).join('');
+  const per = coms.periodo ? `Período ${String(coms.periodo.inicio).slice(0, 4)}–${String(coms.periodo.fim).slice(0, 4)}` : '';
+
+  render(`${largeHTML(comName(c.nome), 'Comissão permanente · ' + c.sigla, esc(per))}
+    ${c.finalidade ? `<p class="lede">${esc(sentence(c.finalidade))}</p>` : ''}
+    <div class="sh">Composição</div>
+    <div class="group inset-64">${membros || '<div class="row"><div class="grow sub">Composição não cadastrada.</div></div>'}</div>
+    <div class="sh">Na comissão agora${na.total ? ' · ' + na.total : ''}</div>
+    <div class="group">${na.rows.length ? na.rows.map((x) => matRow(x.mt, { extra: statusPill(x.status) })).join('')
+      : '<div class="row"><div class="grow"><div class="sub" style="margin:0">Nenhuma matéria aguardando nesta comissão agora.</div></div></div>'}</div>
+    <div class="sh">Reuniões${rj.pagination ? ' · ' + rj.pagination.total_entries : ''}</div>
+    <div class="group inset-64" id="reun">${reunioes.map(reuniaoRow).join('') || '<div class="row"><div class="grow sub">Nenhuma reunião registrada.</div></div>'}</div>
+    <div id="more"></div>
+    ${footerHTML}`, token);
+
+  const setMore = () => {
+    $('more').innerHTML = next ? '<div class="group"><button class="more-btn" id="moreBtn">Reuniões anteriores</button></div>' : '';
+    if (!next) return;
+    $('moreBtn').onclick = async (ev) => {
+      ev.target.disabled = true; ev.target.textContent = 'Carregando…';
+      try { await loadReun(); if (token !== navToken) return; $('reun').innerHTML = reunioes.map(reuniaoRow).join(''); setMore(); }
+      catch { ev.target.disabled = false; ev.target.textContent = 'Erro. Toque para tentar de novo'; }
+    };
+  };
+  setMore();
+}
+
+async function viewUnidade(m, token) {
+  const id = Number(m[1]);
+  setHeader('Matérias', { back: true });
+  render(skeletonHTML(null, null, 5), token, false);
+  const [unidades] = await Promise.all([lookups.unidades(), lookups.tipos().catch(() => ({}))]);
+  const nome = shortUnidade(unidades[id] || 'Unidade');
+  const na = await materiasNaUnidade(id, 60);
+  if (token !== navToken) return;
+  setHeader(nome, { back: true });
+  render(`${largeHTML(nome, 'Matérias paradas aqui agora', `${na.total} matéria${na.total === 1 ? '' : 's'}`)}
+    <div class="group">${na.rows.map((x) => matRow(x.mt, { extra: statusPill(x.status) })).join('') || '<div class="empty">Nenhuma matéria aqui agora.</div>'}</div>
     ${footerHTML}`, token);
 }
 
@@ -910,7 +1143,10 @@ async function viewVereador(m, token) {
   const pid = Number(m[1]);
   setHeader('Vereador', { back: true });
   render(skeletonHTML(null, null, 4), token, false);
-  const [v, autores] = await Promise.all([lookups.vereadores().catch(() => ({ lista: [] })), lookups.autores(), lookups.tipos().catch(() => ({}))]);
+  const [v, autores, , mesa, coms] = await Promise.all([
+    lookups.vereadores().catch(() => ({ lista: [] })), lookups.autores(), lookups.tipos().catch(() => ({})),
+    lookups.mesa().catch(() => ({ list: [] })), lookups.comissoes().catch(() => null),
+  ]);
   let p = v.lista.find((x) => x.pid === pid);
   if (!p) {
     const d = await api(`parlamentares/parlamentar/${pid}/`);
@@ -919,8 +1155,21 @@ async function viewVereador(m, token) {
   }
   if (token !== navToken) return;
   setHeader(p.nome, { back: true });
+  const roles = [];
+  const naMesa = mesa.list.find((x) => x.pid === pid);
+  if (naMesa && naMesa.cargo && naMesa.cargo !== 'Vereador') {
+    roles.push(`<div class="row"><div class="sigla-ic" style="--c:var(--yellow)">${I.building}</div>
+      <div class="grow"><div class="title">${esc(naMesa.cargo)}</div><div class="sub">Mesa Diretora${mesa.ano ? ' · ' + esc(mesa.ano) : ''}</div></div></div>`);
+  }
+  for (const c of (coms ? coms.list : [])) {
+    const mb = c.members.find((x) => x.pid === pid);
+    if (!mb) continue;
+    roles.push(`<a class="row" href="#/comissao/${c.id}"><div class="sigla-ic">${esc(c.sigla)}</div>
+      <div class="grow"><div class="title">${esc(mb.cargo)}${mb.titular ? '' : ' (suplente)'}</div><div class="sub">${esc(comName(c.nome))}</div></div>${I.chev}</a>`);
+  }
   const head = `<div class="profile">${avatarHTML(p, 'xl')}<h1 class="large-title">${esc(p.nome)}</h1>
-    ${p.completo && p.completo !== p.nome ? `<p>${esc(p.completo)}</p>` : ''}</div>`;
+    ${p.completo && p.completo !== p.nome ? `<p>${esc(p.completo)}</p>` : ''}</div>
+    ${roles.length ? `<div class="group inset-64">${roles.join('')}</div>` : ''}`;
 
   if (!p.autorId) {
     render(`${head}<div class="empty">Esse parlamentar ainda não está cadastrado como autor de matérias no sistema.</div>${footerHTML}`, token);
@@ -992,8 +1241,11 @@ const routes = [
   [/^#\/sessao\/(\d+)$/, viewSessao, 'sessoes'],
   [/^#\/materias(?:\?(.*))?$/, viewMaterias, 'materias'],
   [/^#\/materia\/(\d+)$/, viewMateria, 'materias'],
-  [/^#\/vereadores$/, viewVereadores, 'vereadores'],
-  [/^#\/vereador\/(\d+)$/, viewVereador, 'vereadores'],
+  [/^#\/camara$/, viewCamara, 'camara'],
+  [/^#\/vereadores$/, () => location.replace('#/camara'), 'camara'],
+  [/^#\/vereador\/(\d+)$/, viewVereador, 'camara'],
+  [/^#\/comissao\/(\d+)$/, viewComissao, 'camara'],
+  [/^#\/unidade\/(\d+)$/, viewUnidade, 'camara'],
   [/^#\/salvos$/, viewSalvos, 'salvos'],
 ];
 
