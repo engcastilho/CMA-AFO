@@ -2,7 +2,7 @@
 // - Arquivos do app: ficam guardados no aparelho (abre mesmo sem internet).
 // - Dados do SAPL: busca na internet primeiro; sem sinal, usa a última cópia salva.
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = 'cma-shell-' + VERSION;
 const DATA = 'cma-data-' + VERSION;
 const SAPL_API = 'https://sapl.altaflorestadoeste.ro.leg.br/api/';

@@ -50,10 +50,26 @@ function titleCase(s) {
   }).join(' ');
 }
 function nice(s) { return isShouting(s) ? titleCase(s) : String(s || ''); }
+// Nomes próprios e siglas que voltam ao normal depois de tirar o "caixa alta".
+const PROPER = [
+  [/alta floresta d\s*['’`]?\s*oeste/gi, "Alta Floresta D'Oeste"],
+  [/filad[eé]lfia d\s*['’`]?\s*oeste/gi, "Filadélfia D'Oeste"],
+  [/santo ant[oô]nio d\s*['’`]?\s*oeste/gi, "Santo Antônio D'Oeste"],
+  [/rolim de moura do guapor[eé]/gi, 'Rolim de Moura do Guaporé'],
+  [/nova gease/gi, 'Nova Gease'],
+  [/izidol[aâ]ndia/gi, 'Izidolândia'],
+  [/rond[oô]nia/gi, 'Rondônia'],
+  [/\b(ro|br)\s*-\s*(\d+)/gi, (m, a, b) => a.toUpperCase() + '-' + b],
+  [/\/(ro)\b/gi, '/RO'],
+  [/\b(semed|semusa|semosp|semas|semagri|cmafo|pmaf|tce|tcero|ldo|loa|ppa|sus|fundeb)\b/gi, (m) => m.toUpperCase()],
+  [/\b(incisos?|cap[ií]tulos?|t[ií]tulos?|se[cç](?:ão|ões))\s+([ivxlc]+(?:\s*(?:,|e)\s*[ivxlc]+)*)\b/gi,
+    (m, w, nums) => w + ' ' + nums.replace(/[ivxlc]+/gi, (r) => r.toUpperCase())],
+];
 function sentence(s) {
   s = String(s || '').trim();
   if (!s || !isShouting(s)) return s;
   s = s.toLowerCase();
+  for (const [re, rep] of PROPER) s = s.replace(re, rep);
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 function prettyMateria(str) {
@@ -371,7 +387,7 @@ async function viewMaterias(m, token) {
   for (let a = anoAtual; a >= 2005; a--) anos.push(a);
 
   const tipoOpts = (ids) => ids.filter((id) => tipos[id]).map((id) =>
-    `<option value="${id}" ${String(id) === state.tipo ? 'selected' : ''}>${esc(nice(tipos[id].nome))}</option>`).join('');
+    `<option value="${id}" ${String(id) === state.tipo ? 'selected' : ''}>${esc(titleCase(tipos[id].nome))}</option>`).join('');
   const outros = Object.keys(tipos).map(Number).filter((id) => !TIPOS_PRINCIPAIS.includes(id))
     .sort((a, b) => tipos[a].nome.localeCompare(tipos[b].nome, 'pt-BR'));
 
