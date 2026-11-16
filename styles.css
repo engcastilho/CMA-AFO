@@ -55,6 +55,7 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
 html, body { margin: 0; background: var(--bg); color: var(--label); }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -108,7 +109,7 @@ main.enter { animation: enter .28s cubic-bezier(.2, .8, .2, 1); }
 
 .section { display: flex; align-items: baseline; justify-content: space-between; padding: 0 20px; margin: 26px 0 10px; }
 .section h2 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: .2px; }
-.section a { font-size: 17px; }
+.section a { font-size: 17px; white-space: nowrap; margin-left: 12px; }
 .sh { font-size: 13px; text-transform: uppercase; color: var(--label-2); margin: 24px 36px 7px; letter-spacing: -.05px; }
 .foot-note { font-size: 13px; color: var(--label-2); margin: -16px 36px 20px; }
 

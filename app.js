@@ -526,7 +526,7 @@ async function viewHoje(m, token) {
       ${tile(cLei, 'Leis sancionadas', '--teal', I.seal, `#/materias?tipo=30&ano=${ano}`)}
     </div>
     <div id="favBlock">${favIds.length ? favBlockHTML() : ''}</div>
-    <div class="section"><h2>Apresentadas recentemente</h2><a href="#/materias">Ver tudo</a></div>
+    <div class="section"><h2>Novas matérias</h2><a href="#/materias">Ver tudo</a></div>
     <div class="group">${(rec.results || []).map((x) => matRow(x)).join('') || '<div class="empty">Nada por aqui.</div>'}</div>
     ${footerHTML}`, token);
 
