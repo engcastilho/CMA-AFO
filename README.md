@@ -27,7 +27,7 @@ Ele lê os dados públicos do [SAPL da Câmara](https://sapl.altaflorestadoeste.
 | Arquivo | Função |
 |---|---|
 | `index.html` | Estrutura da página e barra de abas |
-| `styles.css` | Visual (tema escuro com destaque roxo) |
+| `styles.css` | Visual (tema escuro com as cores do município: verde, amarelo, azul e branco) |
 | `app.js` | Telas, busca e acesso à API do SAPL |
 | `sw.js` | Funcionamento offline |
 | `manifest.webmanifest` | Nome, ícone e modo "app" ao instalar |

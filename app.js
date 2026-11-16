@@ -133,7 +133,7 @@ const I = {
    ========================================================= */
 
 const SIGLA = { 1: 'PL', 7: 'PLL', 5: 'IND', 2: 'REQ', 3: 'VETO', 8: 'PLC', 9: 'PR', 26: 'PDL', 24: 'EMENDA', 13: 'PELOM', 30: 'LEI', 14: 'ATO', 6: 'ATO', 4: 'OFÍCIO' };
-const COR = { 1: '--tint', 7: '--tint', 8: '--indigo', 13: '--indigo', 5: '--green', 2: '--blue', 3: '--red', 9: '--orange', 26: '--orange', 24: '--pink', 30: '--teal' };
+const COR = { 1: '--tint', 7: '--tint', 8: '--teal', 13: '--teal', 5: '--yellow', 2: '--blue', 3: '--red', 9: '--orange', 26: '--orange', 24: '--pink', 30: '--cyan' };
 let TIPOS = {}; // preenchido pelo lookup
 
 function tagInfo(mt) {
@@ -479,6 +479,15 @@ function sessaoRow(s) {
    HOJE
    ========================================================= */
 
+function tile(n, label, color, icon, hash) {
+  const fg = color === '--yellow' ? ';color:#1c1c1e' : '';
+  const bg = color === '--tint' ? '--tint-fill' : color;
+  return `<a class="tile" style="--c:var(${color})" href="${hash}">
+    <div class="ic" style="background:var(${bg})${fg}">${icon}</div><b>${n === null ? '—' : n.toLocaleString('pt-BR')}</b><span>${label}</span></a>`;
+}
+const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.8l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9l7.1-.6Z"/></svg>';
+const FLAGBAR = '<div class="flagbar"><i style="background:#16B868"></i><i style="background:#fff"></i><i style="background:#2F55FF"></i><i style="background:#FFD60A"></i></div>';
+
 async function viewHoje(m, token) {
   const hoje = todayISO();
   const ano = new Date().getFullYear();
@@ -505,14 +514,11 @@ async function viewHoje(m, token) {
     if (hero.url_video) acts.push(`<a href="${esc(hero.url_video)}" target="_blank" rel="noopener">${I.play}Vídeo</a>`);
     if (hero.upload_ata) acts.push(`<a href="${esc(https(hero.upload_ata))}" target="_blank" rel="noopener">${I.doc}Ata</a>`);
     acts.push(`<a href="#/sessao/${hero.id}">Detalhes</a>`);
-    heroHTML = `<div class="hero"><div class="eyebrow">${rot}</div>
+    heroHTML = `<div class="hero"><div class="hero-star">${STAR}</div><div class="eyebrow">${rot}</div>
       <h3>${esc(sessaoNome(hero))}</h3>
       <div class="when">${esc(fmtLongDate(hero.data_inicio))}${hero.hora_inicio ? ' · ' + esc(hero.hora_inicio) : ''}</div>
-      <div class="acts">${acts.join('')}</div></div>`;
+      <div class="acts">${acts.join('')}</div>${FLAGBAR}</div>`;
   }
-
-  const tile = (n, label, color, icon, hash) => `<a class="tile" style="--c:var(${color})" href="${hash}">
-    <div class="ic">${icon}</div><b>${n === null ? '—' : n.toLocaleString('pt-BR')}</b><span>${label}</span></a>`;
 
   const favIds = Object.keys(Favs.all());
   render(`${largeHTML('Hoje', fmtLongDate(hoje, false))}
@@ -520,10 +526,10 @@ async function viewHoje(m, token) {
     ${heroHTML}
     <div class="section"><h2>Em ${ano}</h2></div>
     <div class="tiles">
-      ${tile(cInd, 'Indicações', '--green', I.megaphone, `#/materias?tipo=5&ano=${ano}`)}
+      ${tile(cInd, 'Indicações', '--yellow', I.megaphone, `#/materias?tipo=5&ano=${ano}`)}
       ${tile(cReq, 'Requerimentos', '--blue', I.bubble, `#/materias?tipo=2&ano=${ano}`)}
       ${tile(cPl, 'Projetos de lei', '--tint', I.scroll, `#/materias?tipo=1&ano=${ano}`)}
-      ${tile(cLei, 'Leis sancionadas', '--teal', I.seal, `#/materias?tipo=30&ano=${ano}`)}
+      ${tile(cLei, 'Leis sancionadas', '--cyan', I.seal, `#/materias?tipo=30&ano=${ano}`)}
     </div>
     <div id="favBlock">${favIds.length ? favBlockHTML() : ''}</div>
     <div class="section"><h2>Novas matérias</h2><a href="#/materias">Ver tudo</a></div>
@@ -927,14 +933,11 @@ async function viewVereador(m, token) {
     api('materia/materialegislativa/', { autores: p.autorId, o: '-data_apresentacao', page_size: 8 }).catch(() => ({ results: [] })),
   ]);
   if (token !== navToken) return;
-  const tile = (n, label, color, icon, hash) => `<a class="tile" style="--c:var(${color})" href="${hash}">
-    <div class="ic">${icon}</div><b>${n === null ? '—' : n.toLocaleString('pt-BR')}</b><span>${label}</span></a>`;
-
   render(`${head}
     <div class="tiles">
       ${tile(tot, 'Matérias no total', '--tint', I.doc, `#/materias?autor=${p.autorId}`)}
       ${tile(doAno, `Em ${ano}`, '--orange', I.calendar, `#/materias?autor=${p.autorId}&ano=${ano}`)}
-      ${tile(ind, 'Indicações', '--green', I.megaphone, `#/materias?autor=${p.autorId}&tipo=5`)}
+      ${tile(ind, 'Indicações', '--yellow', I.megaphone, `#/materias?autor=${p.autorId}&tipo=5`)}
       ${tile(req, 'Requerimentos', '--blue', I.bubble, `#/materias?autor=${p.autorId}&tipo=2`)}
     </div>
     <div class="section"><h2>Mais recentes</h2>${tot > 8 ? `<a href="#/materias?autor=${p.autorId}">Ver tudo</a>` : ''}</div>
